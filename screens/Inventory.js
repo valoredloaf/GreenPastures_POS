@@ -33,12 +33,13 @@ export default function InventoryScreen({
   const [newThreshold, setNewThreshold] = useState('');
 
   const [editingId, setEditingId] = useState(null);
-  const [editName, setEditName] = useState('');
-  const [editUnit, setEditUnit] = useState('');
   const [editQuantity, setEditQuantity] = useState('');
   const [editThreshold, setEditThreshold] = useState('');
-  const [editCategory, setEditCategory] = useState('');
 
+
+  // ===================================================
+  // CATEGORY MANAGEMENT
+  // ===================================================
 
   const handleAddCategory = () => {
     const name = newCategoryName.trim();
@@ -106,6 +107,10 @@ export default function InventoryScreen({
   };
 
 
+  // ===================================================
+  // ADD INGREDIENT
+  // ===================================================
+
   const openAddForm = (category) => {
     setAddingToCategory(category);
     setNewName('');
@@ -141,36 +146,34 @@ export default function InventoryScreen({
   };
 
 
+  // ===================================================
+  // EDIT INGREDIENT (quantity + threshold only)
+  // ===================================================
+
   const startEditing = (ingredient) => {
     setEditingId(ingredient.id);
-    setEditName(ingredient.name);
-    setEditUnit(ingredient.unit);
     setEditQuantity(String(ingredient.quantity));
     setEditThreshold(String(ingredient.threshold));
-    setEditCategory(ingredient.category);
   };
 
   const saveEdit = (id) => {
 
-    if (!editName.trim()) {
-      Alert.alert('Missing name', 'Please enter an ingredient name.');
-      return;
-    }
-
     const qty = Number(editQuantity);
-    const threshold = Number(editThreshold) || 0;
+    const threshold = Number(editThreshold);
 
     if (editQuantity === '' || isNaN(qty) || qty < 0) {
       Alert.alert('Invalid quantity', 'Please enter a valid quantity.');
       return;
     }
 
+    if (editThreshold === '' || isNaN(threshold) || threshold < 0) {
+      Alert.alert('Invalid threshold', 'Please enter a valid low-stock threshold.');
+      return;
+    }
+
     onUpdateIngredient(id, {
-      name: editName.trim(),
-      unit: editUnit,
       quantity: qty,
       threshold,
-      category: editCategory,
     });
 
     setEditingId(null);
@@ -192,6 +195,9 @@ export default function InventoryScreen({
   };
 
 
+  // ===================================================
+  // SCREEN
+  // ===================================================
 
   return (
     <View style={styles.container}>
@@ -377,56 +383,24 @@ export default function InventoryScreen({
 
                         <View style={styles.editForm}>
 
+                          <Text style={styles.editingName}>{item.name}</Text>
+
+                          <Text style={styles.label}>Quantity ({item.unit})</Text>
                           <TextInput
                             style={styles.input}
-                            placeholder="Name"
-                            value={editName}
-                            onChangeText={setEditName}
+                            keyboardType="numeric"
+                            value={editQuantity}
+                            onChangeText={setEditQuantity}
+                            autoFocus
                           />
 
-                          <View style={styles.row}>
-                            <TextInput
-                              style={[styles.input, styles.rowInput]}
-                              placeholder="Unit"
-                              value={editUnit}
-                              onChangeText={setEditUnit}
-                            />
-                            <TextInput
-                              style={[styles.input, styles.rowInput]}
-                              placeholder="Quantity"
-                              keyboardType="numeric"
-                              value={editQuantity}
-                              onChangeText={setEditQuantity}
-                            />
-                          </View>
-
+                          <Text style={styles.label}>Low-stock threshold ({item.unit})</Text>
                           <TextInput
                             style={styles.input}
-                            placeholder="Low-stock threshold"
                             keyboardType="numeric"
                             value={editThreshold}
                             onChangeText={setEditThreshold}
                           />
-
-                          <Text style={styles.label}>Category</Text>
-                          <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            style={styles.categoryPicker}
-                          >
-                            {categories.map(cat => (
-                              <TouchableOpacity
-                                key={cat}
-                                style={[
-                                  styles.categoryChip,
-                                  editCategory === cat && styles.categoryChipSelected,
-                                ]}
-                                onPress={() => setEditCategory(cat)}
-                              >
-                                <Text style={styles.categoryChipText}>{cat}</Text>
-                              </TouchableOpacity>
-                            ))}
-                          </ScrollView>
 
                           <View style={styles.formButtonRow}>
                             <TouchableOpacity
@@ -494,6 +468,11 @@ export default function InventoryScreen({
     </View>
   );
 }
+
+
+// =====================================================
+// STYLES
+// =====================================================
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#555555', padding: 10 },
@@ -655,21 +634,6 @@ const styles = StyleSheet.create({
   smallActionText: { fontSize: 10, fontWeight: '600' },
 
   editForm: { paddingVertical: 4 },
+  editingName: { fontSize: 13, fontWeight: 'bold', marginBottom: 8 },
   label: { fontSize: 11, fontWeight: '600', marginBottom: 6, color: '#374151' },
-  categoryPicker: { marginBottom: 10 },
-  categoryChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    marginRight: 6,
-    backgroundColor: '#fff',
-  },
-  categoryChipSelected: {
-    borderWidth: 2,
-    borderColor: '#5d4738',
-    backgroundColor: '#F3E8E3',
-  },
-  categoryChipText: { fontSize: 11, fontWeight: '600' },
 });
