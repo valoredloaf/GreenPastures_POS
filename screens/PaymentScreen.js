@@ -32,10 +32,6 @@ export default function PaymentScreen({
     setAmount(current => current.slice(0, -1));
   };
 
-  // =========================================
-  // ENTER PAYMENT
-  // =========================================
-
   const enterPayment = () => {
     const paid = Number(amount);
 
@@ -75,10 +71,6 @@ export default function PaymentScreen({
     );
   };
 
-  // =========================================
-  // VOID ORDER
-  // =========================================
-
   const handleVoid = () => {
     Alert.alert(
       'Void Order',
@@ -103,10 +95,6 @@ export default function PaymentScreen({
 
   return (
     <View style={styles.container}>
-
-      {/* ===================================== */}
-      {/* UPPER ORDER SECTION */}
-      {/* ===================================== */}
 
       <View style={styles.orderSection}>
 
@@ -193,31 +181,10 @@ export default function PaymentScreen({
 
       </View>
 
-
-      {/* ===================================== */}
-      {/* LOWER PAYMENT SECTION */}
-      {/* ===================================== */}
-
       <View style={styles.paymentSection}>
 
-        {/* MENU BUTTON */}
-
-        <TouchableOpacity
-          style={styles.menuButton}
-        >
-          <Text style={styles.menuText}>
-            ☰
-          </Text>
-        </TouchableOpacity>
-
-
-        {/* ================================= */}
-        {/* PAYMENT TYPE BUTTONS */}
-        {/* ================================= */}
 
         <View style={styles.paymentTypes}>
-
-          {/* G-CASH */}
 
           <TouchableOpacity
             style={[
@@ -263,13 +230,8 @@ export default function PaymentScreen({
         </View>
 
 
-        {/* ================================= */}
-        {/* NUMBER KEYPAD */}
-        {/* ================================= */}
-
         <View style={styles.keypad}>
 
-          {/* ROW 1 — 1 2 3 */}
 
           <TouchableOpacity
             style={styles.key}
@@ -415,11 +377,6 @@ export default function PaymentScreen({
   );
 }
 
-
-// =============================================
-// STYLES
-// =============================================
-
 const styles = StyleSheet.create({
 
   // MAIN CONTAINER
@@ -429,11 +386,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#555555',
     padding: 7,
   },
-
-
-  // ===========================================
-  // UPPER ORDER SECTION
-  // ===========================================
 
   orderSection: {
     height: 335,
@@ -468,10 +420,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-
-  // ===========================================
-  // ORDER ITEMS
-  // ===========================================
 
   items: {
     marginTop: 20,
@@ -511,11 +459,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-
-  // ===========================================
-  // TOTAL
-  // ===========================================
-
   total: {
     marginTop: 12,
     fontSize: 11,
@@ -523,18 +466,11 @@ const styles = StyleSheet.create({
   },
 
 
-  // ===========================================
-  // PAYMENT INFORMATION
-  // ===========================================
-
   paymentInfo: {
     marginTop: 7,
     fontSize: 10,
     fontWeight: 'bold',
   },
-
-
-  // CASHIER
 
   cashier: {
     marginTop: 10,
@@ -542,10 +478,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
-
-  // ===========================================
-  // LOWER PAYMENT SECTION
-  // ===========================================
 
   paymentSection: {
     flex: 1,
@@ -561,11 +493,6 @@ const styles = StyleSheet.create({
 
     padding: 18,
   },
-
-
-  // ===========================================
-  // MENU BUTTON
-  // ===========================================
 
   menuButton: {
     alignSelf: 'flex-end',
@@ -587,11 +514,6 @@ const styles = StyleSheet.create({
     fontSize: 21,
     fontWeight: 'bold',
   },
-
-
-  // ===========================================
-  // PAYMENT TYPES
-  // ===========================================
 
   paymentTypes: {
     flexDirection: 'row',
@@ -626,10 +548,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
-
-  // ===========================================
-  // KEYPAD
-  // ===========================================
 
   keypad: {
     flexDirection: 'row',

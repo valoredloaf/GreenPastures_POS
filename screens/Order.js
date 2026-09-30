@@ -12,9 +12,7 @@ import PaymentScreen from './PaymentScreen';
 import AddProductsScreen from './AddProducts';
 import ReportsScreen from './Reports';
 import InventoryScreen from './Inventory';
-// =====================================================
-// INITIAL INGREDIENT CATEGORIES
-// =====================================================
+
 const initialIngredientCategories = [
   'Dairy',
   'Coffee',
@@ -23,9 +21,7 @@ const initialIngredientCategories = [
   'Topping',
   'Soda & Juice',
 ];
-// =====================================================
-// INITIAL INGREDIENTS
-// =====================================================
+
 const initialIngredients = [
   { id: 1, name: 'Milk', unit: 'ml', quantity: 5000, threshold: 500, category: 'Dairy' },
   { id: 2, name: 'Brewed Coffee / Espresso', unit: 'ml', quantity: 2000, threshold: 300, category: 'Coffee' },
@@ -54,9 +50,6 @@ const initialIngredients = [
   { id: 25, name: 'Matcha Powder', unit: 'g', quantity: 1000, threshold: 100, category: 'Powder' },
 ];
 
-// =====================================================
-// INITIAL PRODUCTS (with recipes)
-// =====================================================
 const initialProducts = [
   // COFFEE
   {
@@ -631,13 +624,6 @@ export default function OrderScreen({ cashierName, onLogout }) {
         {controlOpen && (
           <View style={styles.controlPanel}>
 
-            <TouchableOpacity
-              style={styles.controlItem}
-              onPress={() => Alert.alert('Orders')}
-            >
-              <Text style={styles.controlIcon}>/</Text>
-              <Text style={styles.controlText}>Order</Text>
-            </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.controlItem}
@@ -754,9 +740,6 @@ export default function OrderScreen({ cashierName, onLogout }) {
   );
 }
 
-// =====================================================
-// STYLES
-// =====================================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#555555', padding: 10 },
   orderContainer: {

@@ -40,10 +40,6 @@ export default function InventoryScreen({
   const [editCategory, setEditCategory] = useState('');
 
 
-  // ===================================================
-  // CATEGORY MANAGEMENT
-  // ===================================================
-
   const handleAddCategory = () => {
     const name = newCategoryName.trim();
 
@@ -110,10 +106,6 @@ export default function InventoryScreen({
   };
 
 
-  // ===================================================
-  // ADD INGREDIENT
-  // ===================================================
-
   const openAddForm = (category) => {
     setAddingToCategory(category);
     setNewName('');
@@ -148,10 +140,6 @@ export default function InventoryScreen({
     setAddingToCategory(null);
   };
 
-
-  // ===================================================
-  // EDIT INGREDIENT
-  // ===================================================
 
   const startEditing = (ingredient) => {
     setEditingId(ingredient.id);
@@ -204,9 +192,6 @@ export default function InventoryScreen({
   };
 
 
-  // ===================================================
-  // SCREEN
-  // ===================================================
 
   return (
     <View style={styles.container}>
@@ -509,11 +494,6 @@ export default function InventoryScreen({
     </View>
   );
 }
-
-
-// =====================================================
-// STYLES
-// =====================================================
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#555555', padding: 10 },
