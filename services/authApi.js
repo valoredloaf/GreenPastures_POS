@@ -1,66 +1,101 @@
-// Mock auth/profile API — swap internals for real fetch() calls
-// to Firebase later. Keep function signatures the same.
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+} from 'firebase/firestore';
+import { auth, db } from './firebase';
 
-let mockProfiles = [
-  { id: '1', name: 'Maria Santos', password: '1234', verified: true, role: 'cashier' },
-  { id: '2', name: 'Juan Dela Cruz', password: 'abcd', verified: true, role: 'cashier' },
-  { id: '3', name: 'Ana Reyes', password: 'pass', verified: false, role: 'cashier' },
-  { id: '4', name: 'Owner Admin', password: 'admin123', verified: true, role: 'admin' },
-];
+const profilesRef = collection(db, 'profiles');
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const makeEmail = (name) => {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+  return `${slug}${Date.now().toString(36)}@greenpastures.app`;
+};
 
-// For the login profile grid — no role/password exposed
 export async function fetchProfiles() {
-  await delay(400);
-  return mockProfiles.map(({ id, name, verified }) => ({ id, name, verified }));
+  try {
+    const snap = await getDocs(profilesRef);
+    console.log('profiles found:', snap.size);
+    return snap.docs.map((d) => ({
+      id: d.id,
+      name: d.data().name,
+      verified: d.data().verified,
+    }));
+  } catch (e) {
+    console.log('fetchProfiles error:', e.code, e.message);
+    return [];
+  }
 }
 
-// For Admin's account management screen — includes role, no password
 export async function fetchAllProfiles() {
-  await delay(400);
-  return mockProfiles.map(({ id, name, verified, role }) => ({ id, name, verified, role }));
+  const snap = await getDocs(profilesRef);
+  return snap.docs.map((d) => ({
+    id: d.id,
+    name: d.data().name,
+    verified: d.data().verified,
+    role: d.data().role,
+  }));
 }
 
 export async function createProfile(name, password) {
-  await delay(600);
-  const newProfile = {
-    id: String(Math.max(...mockProfiles.map(p => Number(p.id))) + 1),
-    name,
-    password,
-    verified: false,
-    role: 'cashier', // signup always creates a cashier/barista account
-  };
-  mockProfiles.push(newProfile);
-  return { success: true, profile: newProfile };
+  try {
+    const email = makeEmail(name);
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await setDoc(doc(db, 'profiles', cred.user.uid), {
+      name,
+      email,
+      role: 'cashier',
+      verified: false,
+    });
+    await signOut(auth);
+    return { success: true };
+  } catch (e) {
+    console.log('createProfile error:', e.message);
+    return { success: false, error: e.message };
+  }
 }
 
 export async function login(profileId, password) {
-  await delay(400);
-  const profile = mockProfiles.find((p) => p.id === profileId);
+  try {
+    const snap = await getDoc(doc(db, 'profiles', profileId));
+    if (!snap.exists()) return { success: false, error: 'Profile not found' };
 
-  if (!profile) return { success: false, error: 'Profile not found' };
-  if (!profile.verified) return { success: false, error: 'Profile not yet verified by owner' };
-  if (profile.password !== password) return { success: false, error: 'Incorrect password' };
+    const profile = snap.data();
+    if (!profile.verified) {
+      return { success: false, error: 'Profile not yet verified by owner' };
+    }
 
-  return {
-    success: true,
-    profile: { id: profile.id, name: profile.name, role: profile.role },
-  };
+    await signInWithEmailAndPassword(auth, profile.email, password);
+
+    return {
+      success: true,
+      profile: { id: profileId, name: profile.name, role: profile.role },
+    };
+  } catch (e) {
+    console.log('login error:', e.message);
+    return { success: false, error: 'Incorrect password' };
+  }
 }
 
-// ADMIN ACTIONS
+export async function logout() {
+  await signOut(auth);
+}
 
 export async function verifyProfile(id) {
-  await delay(300);
-  mockProfiles = mockProfiles.map((p) =>
-    p.id === id ? { ...p, verified: true } : p
-  );
+  await updateDoc(doc(db, 'profiles', id), { verified: true });
   return { success: true };
 }
 
 export async function deleteProfile(id) {
-  await delay(300);
-  mockProfiles = mockProfiles.filter((p) => p.id !== id);
+  await deleteDoc(doc(db, 'profiles', id));
   return { success: true };
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,6 +9,9 @@ import {
 } from 'react-native';
 
 import PaymentScreen from './PaymentScreen';
+import { doc, writeBatch, collection, getDoc, runTransaction } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../services/firebase';
 
 export default function OrderScreen({
   cashierName,
@@ -16,24 +19,31 @@ export default function OrderScreen({
   ingredients,
   setIngredients,
   setSalesHistory,
+  menuCategories = {},
   onLogout,
 }) {
-
-  const menuCategoryColors = products.reduce((acc, p) => {
-    if (!acc[p.category]) {
-      // fallback color if not otherwise defined — App.js's menuCategories is the real source
-      acc[p.category] = '#B99F96';
-    }
-    return acc;
-  }, {});
 
   const [orders, setOrders] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showPayment, setShowPayment] = useState(false);
+  const [orderNumber, setOrderNumber] = useState(null);
+
+  const loadOrderNumber = async () => {
+    try {
+      const snap = await getDoc(doc(db, 'counters', 'orders'));
+      setOrderNumber((snap.exists() ? snap.data().last : 0) + 1);
+    } catch (e) {
+      console.log('Order number error:', e.message);
+    }
+  };
+
+  useEffect(() => {
+    loadOrderNumber();
+  }, []);
 
   const categories = ['All', ...new Set(products.map(p => p.category))];
+  const colorFor = (category) => menuCategories[category] || '#B99F96';
 
-  // ADD TO ORDER
   const addToOrder = (product) => {
     const existingOrder = orders.find(item => item.id === product.id);
     if (existingOrder) {
@@ -49,7 +59,6 @@ export default function OrderScreen({
     }
   };
 
-  // CHANGE QUANTITY
   const changeQuantity = (productId, amount) => {
     setOrders(
       orders
@@ -62,62 +71,118 @@ export default function OrderScreen({
     );
   };
 
-  // DEDUCT INGREDIENTS (based on recipes)
   const deductIngredientsForOrder = (cartItems) => {
-    setIngredients(prevIngredients => {
-      const updated = prevIngredients.map(ing => ({ ...ing }));
+    const updated = ingredients.map(ing => ({ ...ing }));
 
-      cartItems.forEach(cartItem => {
-        const product = products.find(p => p.id === cartItem.id);
-        if (!product || !product.recipe) return;
+    cartItems.forEach(cartItem => {
+      const product = products.find(p => p.id === cartItem.id);
+      if (!product || !product.recipe) return;
 
-        product.recipe.forEach(entry => {
-          const ingredient = updated.find(ing => ing.name === entry.ingredient);
-          if (ingredient) {
-            const usedAmount = entry.amount * cartItem.quantity;
-            ingredient.quantity = Math.max(0, ingredient.quantity - usedAmount);
-          }
-        });
+      product.recipe.forEach(entry => {
+        const ingredient = updated.find(ing => ing.name === entry.ingredient);
+        if (ingredient) {
+          ingredient.quantity = Math.max(
+            0,
+            ingredient.quantity - entry.amount * cartItem.quantity
+          );
+        }
       });
-
-      return updated;
     });
+
+    setIngredients(updated);
+
+    const batch = writeBatch(db);
+    updated.forEach((ing, i) => {
+      if (ing.quantity !== ingredients[i].quantity) {
+        batch.update(doc(db, 'ingredients', String(ing.id)), { quantity: ing.quantity });
+      }
+    });
+    batch.commit().catch(e => console.log('Stock save error:', e.message));
   };
 
-  // LOW STOCK CHECK
   const lowStockItems = ingredients.filter(ing => ing.quantity <= ing.threshold);
 
-  // TOTAL PRICE
   const totalPrice = orders.reduce(
     (total, item) => total + item.price * item.quantity,
     0
   );
 
-  // FILTERED PRODUCTS
   const filteredProducts =
     selectedCategory === 'All'
       ? products
       : products.filter(product => product.category === selectedCategory);
 
-  // PAYMENT SCREEN
+  const uploadProof = async (uri, orderNum) => {
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const path = `payment-proofs/order-${orderNum}-${Date.now()}.jpg`;
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, blob);
+      return await getDownloadURL(storageRef);
+    } catch (e) {
+      console.log('Proof upload error:', e.message);
+      return null;
+    }
+  };
+
   if (showPayment) {
     return (
       <PaymentScreen
         orders={orders}
         totalPrice={totalPrice}
+        cashierName={cashierName}
+        orderNumber={orderNumber}
         onBack={() => setShowPayment(false)}
         onVoid={() => {
           setOrders([]);
           setShowPayment(false);
         }}
-        onPaymentComplete={({ paymentMode }) => {
+        onPaymentComplete={async ({ paymentMode, amountPaid, change, proofUri }) => {
           const now = new Date();
+          const items = orders.map(o => ({
+            id: o.id,
+            name: o.name,
+            price: o.price,
+            quantity: o.quantity,
+          }));
+
+          let proofUrl = null;
+          if (proofUri) {
+            proofUrl = await uploadProof(proofUri, orderNumber);
+          }
+
+          let number = null;
+          try {
+            const counterRef = doc(db, 'counters', 'orders');
+            number = await runTransaction(db, async (tx) => {
+              const snap = await tx.get(counterRef);
+              const next = (snap.exists() ? snap.data().last : 0) + 1;
+              tx.set(counterRef, { last: next });
+              tx.set(doc(collection(db, 'sales')), {
+                orderNumber: next,
+                date: now.toISOString(),
+                cashier: cashierName || 'Unknown',
+                paymentMode,
+                amountPaid: amountPaid ?? totalPrice,
+                change: change ?? 0,
+                total: totalPrice,
+                items,
+                proofUrl,
+              });
+              return next;
+            });
+          } catch (e) {
+            console.log('Sale save error:', e.message);
+          }
+
           deductIngredientsForOrder(orders);
 
           setSalesHistory(prev => [
             ...prev,
             {
-              id: prev.length + 1,
+              id: number ?? Date.now(),
+              orderNumber: number,
               date: now.toLocaleString('en-PH', {
                 month: 'short',
                 day: 'numeric',
@@ -128,21 +193,22 @@ export default function OrderScreen({
               items: orders,
               total: totalPrice,
               paymentMode,
+              proofUrl,
             },
           ]);
 
           setOrders([]);
           setShowPayment(false);
+          loadOrderNumber();
         }}
       />
     );
   }
 
-  // PRODUCT BUTTON
   const ProductButton = ({ product }) => (
     <TouchableOpacity
       key={product.id}
-      style={styles.product}
+      style={[styles.product, { backgroundColor: colorFor(product.category) }]}
       onPress={() => addToOrder(product)}
     >
       <Text style={styles.productName}>{product.name}</Text>
@@ -153,7 +219,6 @@ export default function OrderScreen({
   return (
     <View style={styles.container}>
 
-      {/* LOW STOCK NOTIFICATION */}
       {lowStockItems.length > 0 && (
         <View style={styles.lowStockBanner}>
           <Text style={styles.lowStockText}>
@@ -162,11 +227,10 @@ export default function OrderScreen({
         </View>
       )}
 
-      {/* ORDER SECTION */}
       <View style={styles.orderContainer}>
 
         <View style={styles.orderHeader}>
-          <Text style={styles.orderTitle}>Order: #110</Text>
+          <Text style={styles.orderTitle}>Order: #{orderNumber ?? '...'}</Text>
           <TouchableOpacity onPress={onLogout}>
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
@@ -209,10 +273,8 @@ export default function OrderScreen({
 
       </View>
 
-      {/* MENU SECTION */}
       <View style={styles.menuContainer}>
 
-        {/* CATEGORY FILTERS */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -224,6 +286,7 @@ export default function OrderScreen({
               key={category}
               style={[
                 styles.categoryButton,
+                { backgroundColor: category === 'All' ? '#D9D9D9' : colorFor(category) },
                 selectedCategory === category && styles.selectedCategory,
               ]}
               onPress={() => setSelectedCategory(category)}
@@ -233,7 +296,6 @@ export default function OrderScreen({
           ))}
         </ScrollView>
 
-        {/* PRODUCT LIST */}
         <ScrollView style={styles.productsScroll} showsVerticalScrollIndicator={true}>
           <View style={styles.filteredProducts}>
             {filteredProducts.map(product => (
@@ -244,7 +306,6 @@ export default function OrderScreen({
           </View>
         </ScrollView>
 
-        {/* PAYMENT */}
         <TouchableOpacity
           style={styles.paymentButton}
           onPress={() => setShowPayment(true)}
@@ -329,16 +390,15 @@ const styles = StyleSheet.create({
   filteredProducts: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    marginHorizontal: -4,
     paddingBottom: 10,
   },
-  filteredProductWrapper: { width: '31.5%' },
+  filteredProductWrapper: { width: '33.333%', padding: 4 },
   product: {
     width: '100%',
-    minHeight: 65,
+    height: 78,
     borderRadius: 5,
-    padding: 8,
-    marginBottom: 8,
+    padding: 6,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
