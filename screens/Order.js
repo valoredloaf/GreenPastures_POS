@@ -10,8 +10,10 @@ import {
 
 import PaymentScreen from './PaymentScreen';
 import { doc, writeBatch, collection, getDoc, runTransaction } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../services/firebase';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as ImageManipulator from 'expo-image-manipulator';
+
+import { db } from '../services/firebase';
 
 export default function OrderScreen({
   cashierName,
@@ -41,7 +43,7 @@ export default function OrderScreen({
     loadOrderNumber();
   }, []);
 
-  const categories = ['All', ...new Set(products.map(p => p.category))];
+  const categories = ['All', ...Object.keys(menuCategories)];
   const colorFor = (category) => menuCategories[category] || '#B99F96';
 
   const addToOrder = (product) => {
@@ -112,16 +114,24 @@ export default function OrderScreen({
       ? products
       : products.filter(product => product.category === selectedCategory);
 
-  const uploadProof = async (uri, orderNum) => {
+  // Reads the captured photo and turns it into a data URI, stored directly
+  // in the sale document (no Firebase Storage — that path isn't reliable on RN).
+  const uploadProof = async (uri) => {
     try {
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const path = `payment-proofs/order-${orderNum}-${Date.now()}.jpg`;
-      const storageRef = ref(storage, path);
-      await uploadBytes(storageRef, blob);
-      return await getDownloadURL(storageRef);
+      const resized = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 600 } }],
+        { compress: 0.3, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      const base64 = await FileSystem.readAsStringAsync(resized.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      return `data:image/jpeg;base64,${base64}`;
+
     } catch (e) {
-      console.log('Proof upload error:', e.message);
+      console.log('Proof read error:', e.message);
+      Alert.alert('Photo processing failed', e.message);
       return null;
     }
   };
@@ -149,7 +159,7 @@ export default function OrderScreen({
 
           let proofUrl = null;
           if (proofUri) {
-            proofUrl = await uploadProof(proofUri, orderNumber);
+            proofUrl = await uploadProof(proofUri);
           }
 
           let number = null;
@@ -197,6 +207,10 @@ export default function OrderScreen({
             },
           ]);
 
+          // The receipt screen takes over from here; onDone closes it
+          return { orderNumber: number, date: now };
+        }}
+        onDone={() => {
           setOrders([]);
           setShowPayment(false);
           loadOrderNumber();

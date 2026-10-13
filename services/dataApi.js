@@ -1,5 +1,4 @@
 // Firestore save/load helpers used by AdminScreen and App.js
-
 import {
   collection,
   doc,
@@ -8,6 +7,8 @@ import {
   updateDoc,
   deleteDoc,
   writeBatch,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -49,8 +50,13 @@ export const deleteProductDoc = (id) =>
 export const saveMenuCategory = (name, color) =>
   setDoc(doc(db, 'menuCategories', name), { name, color });
 
-export const deleteMenuCategoryDoc = (name) =>
-  deleteDoc(doc(db, 'menuCategories', name));
+// Deletes every category document whose "name" matches, plus the one whose ID is the name.
+// (A plain deleteDoc by name silently does nothing if the document has a different ID.)
+export async function deleteMenuCategoryDoc(name) {
+  const snap = await getDocs(query(collection(db, 'menuCategories'), where('name', '==', name)));
+  await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+  await deleteDoc(doc(db, 'menuCategories', name));
+}
 
 // ---------- Sales (admin only) ----------
 export async function fetchSales() {
@@ -62,6 +68,7 @@ export async function fetchSales() {
       const when = s.date ? new Date(s.date) : null;
       return {
         id: d.id,
+        orderNumber: s.orderNumber ?? null,
         sortKey: when ? when.getTime() : 0,
         date: when
           ? when.toLocaleString('en-PH', {
@@ -75,6 +82,7 @@ export async function fetchSales() {
         paymentMode: s.paymentMode,
         items: s.items || [],
         total: s.total || 0,
+        proofUrl: s.proofUrl || null,
       };
     })
     .sort((a, b) => a.sortKey - b.sortKey); // Reports reverses, so newest shows first

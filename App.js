@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from './services/firebase';
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
@@ -80,32 +80,48 @@ useEffect(() => {
   if (!user) return;
   setLoading(true);
 
-  async function loadData() {
-    try {
-      const [ingSnap, prodSnap, menuSnap, catSnap] = await Promise.all([
-        getDocs(collection(db, 'ingredients')),
-        getDocs(collection(db, 'products')),
-        getDocs(collection(db, 'menuCategories')),
-        getDocs(collection(db, 'ingredientCategories')),
-      ]);
-      setIngredients(ingSnap.docs.map((d) => d.data()).sort((a, b) => a.id - b.id));
-      setProducts(prodSnap.docs.map((d) => d.data()).sort((a, b) => a.id - b.id));
-      const menuObj = {};
-      menuSnap.docs.forEach((d) => { menuObj[d.data().name] = d.data().color; });
-      setMenuCategories(menuObj);
-      setIngredientCategories(catSnap.docs.map((d) => d.data().name));
+  // Follow these four collections live. The spinner goes away once each has loaded once.
+  const pending = new Set(['ingredients', 'products', 'menuCategories', 'ingredientCategories']);
+  const ready = (name) => {
+    pending.delete(name);
+    if (!pending.size) setLoading(false);
+  };
+  const fail = (name) => (e) => {
+    console.log(`Listen error (${name}):`, e.message);
+    ready(name);
+  };
 
-      if (user.role === 'admin') {
-        const sales = await fetchSales();
-        setSalesHistory(sales);
-      }
-    } catch (e) {
-      console.log('Load error:', e.message);
-    } finally {
-      setLoading(false);
-    }
+  const stops = [
+    onSnapshot(collection(db, 'ingredients'), (snap) => {
+      setIngredients(snap.docs.map((d) => d.data()).sort((a, b) => a.id - b.id));
+      ready('ingredients');
+    }, fail('ingredients')),
+
+    onSnapshot(collection(db, 'products'), (snap) => {
+      setProducts(snap.docs.map((d) => d.data()).sort((a, b) => a.id - b.id));
+      ready('products');
+    }, fail('products')),
+
+    onSnapshot(collection(db, 'menuCategories'), (snap) => {
+      const menuObj = {};
+      snap.docs.forEach((d) => { menuObj[d.data().name] = d.data().color; });
+      setMenuCategories(menuObj);
+      ready('menuCategories');
+    }, fail('menuCategories')),
+
+    onSnapshot(collection(db, 'ingredientCategories'), (snap) => {
+      setIngredientCategories(snap.docs.map((d) => d.data().name));
+      ready('ingredientCategories');
+    }, fail('ingredientCategories')),
+  ];
+
+  if (user.role === 'admin') {
+    fetchSales()
+      .then(setSalesHistory)
+      .catch((e) => console.log('Sales load error:', e.message));
   }
-  loadData();
+
+  return () => stops.forEach((stop) => stop());
 }, [user]);
   const [salesHistory, setSalesHistory] = useState([]);
 
