@@ -6,13 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
-  Alert as RNAlert,
-  Platform,
 } from 'react-native';
 
 import InventoryScreen from './Inventory';
 import AddProductsScreen from './AddProducts';
 import ReportsScreen from './Reports';
+import { showAlert, confirmDialog } from '../services/dialog';
 import { fetchAllProfiles, verifyProfile, deleteProfile } from '../services/authApi';
 import {
   saveIngredient,
@@ -26,24 +25,6 @@ import {
   saveMenuCategory,
   deleteMenuCategoryDoc,
 } from '../services/dataApi';
-
-// React Native's Alert does nothing in the web preview (no popup, buttons never run).
-// This version uses the browser's alert/confirm on web and the normal Alert on phones.
-const Alert = {
-  alert(title, message, buttons) {
-    if (Platform.OS !== 'web') return RNAlert.alert(title, message, buttons);
-    const text = message ? `${title}\n\n${message}` : title;
-    if (!buttons || buttons.length < 2) {
-      window.alert(text);
-      if (buttons && buttons[0] && buttons[0].onPress) buttons[0].onPress();
-      return;
-    }
-    const cancel = buttons.find((b) => b.style === 'cancel');
-    const action = buttons.find((b) => b !== cancel);
-    if (window.confirm(text)) { if (action && action.onPress) action.onPress(); }
-    else if (cancel && cancel.onPress) cancel.onPress();
-  },
-};
 
 export default function AdminScreen({
   adminName,
@@ -65,7 +46,7 @@ export default function AdminScreen({
   const [newCategoryName, setNewCategoryName] = useState('');
 
   // Shown if a change could not be saved to the database
-  const fail = (e) => Alert.alert('Not saved', e?.message || 'Could not save to the database.');
+  const fail = (e) => showAlert('Not saved', e?.message || 'Could not save to the database.');
 
   // Firestore document IDs cannot contain "/"
   const hasBadChars = (name) => name.includes('/');
@@ -88,7 +69,7 @@ export default function AdminScreen({
   const handleApprove = async (id, name) => {
     try {
       await verifyProfile(id);
-      Alert.alert('Approved', `${name} can now log in.`);
+      showAlert('Approved', `${name} can now log in.`);
       loadAccounts();
     } catch (e) {
       fail(e);
@@ -96,42 +77,31 @@ export default function AdminScreen({
   };
 
   const handleDeleteAccount = (id, name) => {
-    Alert.alert(
-      'Delete Account',
-      `Remove "${name}"? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteProfile(id);
-              loadAccounts();
-            } catch (e) {
-              fail(e);
-            }
-          },
-        },
-      ]
-    );
+    confirmDialog('Delete Account', `Remove "${name}"? This cannot be undone.`, 'Delete', async () => {
+      try {
+        await deleteProfile(id);
+        loadAccounts();
+      } catch (e) {
+        fail(e);
+      }
+    });
   };
 
   const handleAddMenuCategory = () => {
     const name = newCategoryName.trim();
 
     if (!name) {
-      Alert.alert('Missing name', 'Please enter a category name.');
+      showAlert('Missing name', 'Please enter a category name.');
       return;
     }
 
     if (hasBadChars(name)) {
-      Alert.alert('Invalid name', 'Category names cannot contain "/".');
+      showAlert('Invalid name', 'Category names cannot contain "/".');
       return;
     }
 
     if (menuCategories[name]) {
-      Alert.alert('Duplicate', 'That menu category already exists.');
+      showAlert('Duplicate', 'That menu category already exists.');
       return;
     }
 
@@ -141,36 +111,25 @@ export default function AdminScreen({
     setMenuCategories(prev => ({ ...prev, [name]: nextColor }));
     saveMenuCategory(name, nextColor).catch(fail);
     setNewCategoryName('');
-    Alert.alert('Added', `"${name}" is now available on the Cashier screen.`);
+    showAlert('Added', `"${name}" is now available on the Cashier screen.`);
   };
 
   const handleDeleteMenuCategory = (name) => {
     const inUse = products.some(p => p.category === name);
 
     if (inUse) {
-      Alert.alert('Category in use', `Some products are still in "${name}". Move or remove them first.`);
+      showAlert('Category in use', `Some products are still in "${name}". Move or remove them first.`);
       return;
     }
 
-    Alert.alert(
-      'Delete Menu Category',
-      `Remove "${name}" from the menu?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            setMenuCategories(prev => {
-              const updated = { ...prev };
-              delete updated[name];
-              return updated;
-            });
-            deleteMenuCategoryDoc(name).catch(fail);
-          },
-        },
-      ]
-    );
+    confirmDialog('Delete Menu Category', `Remove "${name}" from the menu?`, 'Delete', () => {
+      setMenuCategories(prev => {
+        const updated = { ...prev };
+        delete updated[name];
+        return updated;
+      });
+      deleteMenuCategoryDoc(name).catch(fail);
+    });
   };
 
   // ===================================================
@@ -201,7 +160,7 @@ export default function AdminScreen({
         }}
         onAddCategory={(name) => {
           if (hasBadChars(name)) {
-            Alert.alert('Invalid name', 'Category names cannot contain "/".');
+            showAlert('Invalid name', 'Category names cannot contain "/".');
             return;
           }
           setIngredientCategories(prev => [...prev, name]);
@@ -209,7 +168,7 @@ export default function AdminScreen({
         }}
         onRenameCategory={(oldName, newName) => {
           if (hasBadChars(newName)) {
-            Alert.alert('Invalid name', 'Category names cannot contain "/".');
+            showAlert('Invalid name', 'Category names cannot contain "/".');
             return;
           }
           const affectedIds = ingredients
@@ -233,6 +192,7 @@ export default function AdminScreen({
 
   // ===================================================
   // SECTION: PRODUCTS
+  // The live listener in App.js updates the list once Firestore accepts the change
   // ===================================================
   if (activeSection === 'products') {
     return (
@@ -242,18 +202,13 @@ export default function AdminScreen({
         ingredients={ingredients}
         ingredientCategories={ingredientCategories}
         products={products}
-        onAddProduct={(newProduct) => {
-          const product = {
+        onAddProduct={(newProduct) =>
+          saveProduct({
             ...newProduct,
             id: Math.max(0, ...products.map(p => p.id)) + 1,
-          };
-          setProducts(prev => [...prev, product]);
-          saveProduct(product).catch(fail);
-        }}
-        onDeleteProduct={(id) => {
-          setProducts(prev => prev.filter(p => p.id !== id));
-          deleteProductDoc(id).catch(fail);
-        }}
+          })
+        }
+        onDeleteProduct={(id) => deleteProductDoc(id)}
         onBack={() => setActiveSection('home')}
       />
     );

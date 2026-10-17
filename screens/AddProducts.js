@@ -6,10 +6,10 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { showAlert, confirmDialog } from '../services/dialog';
 
 export default function AddProductsScreen({
   categories = [],
@@ -28,6 +28,8 @@ export default function AddProductsScreen({
   // recipe line = { ingredientCategory: string, ingredient: string, amount: string }
   const [recipe, setRecipe] = useState([]);
   const [showManageProducts, setShowManageProducts] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   const addRecipeLine = () => {
     setRecipe(prev => [...prev, { ingredientCategory: '', ingredient: '', amount: '' }]);
@@ -52,20 +54,22 @@ export default function AddProductsScreen({
     setRecipe(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (saving) return;
+
     if (!name.trim()) {
-      Alert.alert('Missing name', 'Please enter a product name.');
+      showAlert('Missing name', 'Please enter a product name.');
       return;
     }
 
     const numericPrice = Number(price);
     if (!price || isNaN(numericPrice) || numericPrice <= 0) {
-      Alert.alert('Invalid price', 'Please enter a valid price.');
+      showAlert('Invalid price', 'Please enter a valid price.');
       return;
     }
 
     if (!category) {
-      Alert.alert('Missing category', 'Please select a category.');
+      showAlert('Missing category', 'Please select a category.');
       return;
     }
 
@@ -76,46 +80,51 @@ export default function AddProductsScreen({
       if (isBlank) continue;
 
       if (!line.ingredient) {
-        Alert.alert('Incomplete ingredient', 'Please select an ingredient for each recipe line, or remove the empty row.');
+        showAlert('Incomplete ingredient', 'Please select an ingredient for each recipe line, or remove the empty row.');
         return;
       }
 
       const amountNum = Number(line.amount);
       if (!line.amount || isNaN(amountNum) || amountNum <= 0) {
-        Alert.alert('Invalid amount', `Please enter a valid amount for ${line.ingredient}.`);
+        showAlert('Invalid amount', `Please enter a valid amount for ${line.ingredient}.`);
         return;
       }
 
       cleanedRecipe.push({ ingredient: line.ingredient, amount: amountNum });
     }
 
-    onAddProduct({
-      name: name.trim(),
-      price: numericPrice,
-      category,
-      recipe: cleanedRecipe,
-    });
-
-    Alert.alert('Product added', `${name.trim()} has been added.`);
-
-    setName('');
-    setPrice('');
-    setRecipe([]);
+    const productName = name.trim();
+    setSaving(true);
+    try {
+      await onAddProduct({
+        name: productName,
+        price: numericPrice,
+        category,
+        recipe: cleanedRecipe,
+      });
+      showAlert('Product added', `${productName} has been added.`);
+      setName('');
+      setPrice('');
+      setRecipe([]);
+    } catch (e) {
+      showAlert('Not saved', e?.message || 'Could not save the product.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = (product) => {
-    Alert.alert(
-      'Remove Product',
-      `Remove "${product.name.replace('\n', ' ')}" from the menu?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => onDeleteProduct(product.id),
-        },
-      ]
-    );
+    const label = product.name.replace(/\n/g, ' ');
+    confirmDialog('Remove Product', `Remove "${label}" from the menu?`, 'Remove', async () => {
+      setDeletingId(product.id);
+      try {
+        await onDeleteProduct(product.id);
+      } catch (e) {
+        showAlert('Not removed', e?.message || 'Could not remove the product.');
+      } finally {
+        setDeletingId(null);
+      }
+    });
   };
 
   return (
@@ -151,7 +160,7 @@ export default function AddProductsScreen({
                   <View key={product.id} style={styles.productRow}>
                     <View style={styles.productInfo}>
                       <Text style={styles.productName}>
-                        {product.name.replace('\n', ' ')}
+                        {product.name.replace(/\n/g, ' ')}
                       </Text>
                       <Text style={styles.productMeta}>
                         {product.category} · ₱{product.price}
@@ -159,10 +168,13 @@ export default function AddProductsScreen({
                     </View>
 
                     <TouchableOpacity
-                      style={styles.removeButton}
+                      style={[styles.removeButton, deletingId === product.id && styles.disabledButton]}
                       onPress={() => handleDelete(product)}
+                      disabled={deletingId === product.id}
                     >
-                      <Text style={styles.removeButtonText}>Remove</Text>
+                      <Text style={styles.removeButtonText}>
+                        {deletingId === product.id ? 'Removing…' : 'Remove'}
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 ))
@@ -215,9 +227,7 @@ export default function AddProductsScreen({
                 </View>
               </View>
 
-              {/* ===================================
-                  RECIPE / INGREDIENTS
-              =================================== */}
+              {/* Recipe / ingredients */}
 
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Ingredients used</Text>
@@ -319,8 +329,12 @@ export default function AddProductsScreen({
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                <Text style={styles.submitText}>Add Product</Text>
+              <TouchableOpacity
+                style={[styles.submitButton, saving && styles.disabledButton]}
+                onPress={handleSubmit}
+                disabled={saving}
+              >
+                <Text style={styles.submitText}>{saving ? 'Saving…' : 'Add Product'}</Text>
               </TouchableOpacity>
 
             </View>
@@ -328,7 +342,7 @@ export default function AddProductsScreen({
           )}
 
           <TouchableOpacity style={styles.backButton} onPress={onBack}>
-            <Text style={styles.backText}>← Back to Order</Text>
+            <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
 
         </View>
@@ -461,6 +475,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   submitText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  disabledButton: { opacity: 0.5 },
   backButton: { marginTop: 16, alignSelf: 'center' },
   backText: { fontSize: 13, color: '#6B7280' },
 
