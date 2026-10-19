@@ -60,7 +60,7 @@ export default function LoginScreen({ onLoginSuccess, onGoToSignup }) {
     setError(result.error);
     return;
   }
-  setInfo('Reset link sent! Check your email (and spam folder).');
+  setInfo('Reset link sent! Check your email or spam folder');
 };
 
   if (loadingProfiles) {
