@@ -175,8 +175,12 @@ export default function PaymentScreen({
   };
 
   const enterPayment = async () => {
-    const paid = Number(amount);
+    if (orders.length === 0) {
+      Alert.alert('No items', 'Add items to the order first.');
+      return;
+    }
 
+    const paid = Number(amount);
     if (!paid) {
       Alert.alert('Payment Required', 'Please enter payment received.');
       return;
@@ -328,9 +332,9 @@ export default function PaymentScreen({
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.key}
+            style={[styles.key, orders.length === 0 && styles.keyDisabled]}
             onPress={enterPayment}
-            disabled={capturingProof || saving}
+            disabled={capturingProof || saving || orders.length === 0}
           >
             {capturingProof || saving
               ? <ActivityIndicator color="#333" />
@@ -450,22 +454,33 @@ const styles = StyleSheet.create({
   },
   paymentTypes: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
   paymentButton: {
-    width: '30%', height: 42, backgroundColor: '#C0B0B0',
-    borderWidth: 1, borderColor: '#777', borderRadius: 5,
-    justifyContent: 'center', alignItems: 'center',
+    width: '30%',
+    height: 42,
+    backgroundColor: '#C0B0B0',
+    borderWidth: 1,
+    borderColor: '#777',
+    borderRadius: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   selectedPayment: { borderWidth: 2, borderColor: '#333' },
   buttonText: { fontSize: 10, fontWeight: 'bold' },
   keypad: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   key: {
-    width: '30%', height: 42, backgroundColor: '#B09F9F',
-    borderWidth: 1, borderColor: '#777', borderRadius: 5,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 8,
+    width: '30%',
+    height: 42,
+    backgroundColor: '#B09F9F',
+    borderWidth: 1,
+    borderColor: '#777',
+    borderRadius: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   keyText: { fontSize: 20, fontWeight: 'bold' },
   smallButtonText: { fontSize: 10, fontWeight: 'bold' },
   deleteText: { fontSize: 20, fontWeight: 'bold' },
-
+  keyDisabled: { opacity: 0.4 },
   rcOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.65)',
