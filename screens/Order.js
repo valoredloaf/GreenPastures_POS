@@ -6,14 +6,24 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  
 } from 'react-native';
 
 import PaymentScreen from './PaymentScreen';
 import { doc, writeBatch, collection, getDoc, runTransaction } from 'firebase/firestore';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { confirmDialog } from '../services/dialog';
 
 import { db } from '../services/firebase';
+
+const getTodayString = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 export default function OrderScreen({
   cashierName,
@@ -33,10 +43,20 @@ export default function OrderScreen({
   const loadOrderNumber = async () => {
     try {
       const snap = await getDoc(doc(db, 'counters', 'orders'));
-      setOrderNumber((snap.exists() ? snap.data().last : 0) + 1);
+      const data = snap.exists() ? snap.data() : null;
+      const lastToday = data && data.date === getTodayString() ? data.last : 0;
+      setOrderNumber(lastToday + 1);
     } catch (e) {
       console.log('Order number error:', e.message);
     }
+  };
+console.log('handleLogout was called');
+    const handleLogout = () => {
+    const message = orders.length > 0
+      ? 'You have an unfinished order. If you log out, it will be lost. Log out anyway?'
+      : 'Are you sure you want to log out?';
+
+    confirmDialog('Log Out', message, 'Log Out', () => onLogout?.());
   };
 
   useEffect(() => {
@@ -109,11 +129,25 @@ export default function OrderScreen({
     0
   );
 
+  const normalize = (text) => String(text || '').trim().toLowerCase();
+
+  const categoryNames = Object.keys(menuCategories).map(normalize);
+
+  const sortedProducts = [...products].sort((a, b) => {
+    const positionA = categoryNames.indexOf(normalize(a.category));
+    const positionB = categoryNames.indexOf(normalize(b.category));
+    const rankA = positionA === -1 ? categoryNames.length : positionA;
+    const rankB = positionB === -1 ? categoryNames.length : positionB;
+    return rankA - rankB;
+  });
+
   const filteredProducts =
     selectedCategory === 'All'
-      ? products
-      : products.filter(product => product.category === selectedCategory);
+      ? sortedProducts
+      : products.filter(product => normalize(product.category) === normalize(selectedCategory));
 
+  console.log('Menu categories:', Object.keys(menuCategories));
+  console.log('Product categories:', products.map(p => `${p.name} -> "${p.category}"`));
   // Reads the captured photo and turns it into a data URI, stored directly
   // in the sale document (no Firebase Storage — that path isn't reliable on RN).
   const uploadProof = async (uri) => {
@@ -165,10 +199,13 @@ export default function OrderScreen({
           let number = null;
           try {
             const counterRef = doc(db, 'counters', 'orders');
+            const todayString = getTodayString();
             number = await runTransaction(db, async (tx) => {
               const snap = await tx.get(counterRef);
-              const next = (snap.exists() ? snap.data().last : 0) + 1;
-              tx.set(counterRef, { last: next });
+              const data = snap.exists() ? snap.data() : null;
+              const lastToday = data && data.date === todayString ? data.last : 0;
+              const next = lastToday + 1;
+              tx.set(counterRef, { last: next, date: todayString });
               tx.set(doc(collection(db, 'sales')), {
                 orderNumber: next,
                 date: now.toISOString(),
@@ -245,7 +282,16 @@ export default function OrderScreen({
 
         <View style={styles.orderHeader}>
           <Text style={styles.orderTitle}>Order: #{orderNumber ?? '...'}</Text>
-          <TouchableOpacity onPress={onLogout}>
+          <TouchableOpacity
+            onPress={() =>
+              confirmDialog(
+                'Log Out',
+                'Are you sure you want to log out?',
+                'Log Out',
+                () => onLogout?.()
+              )
+            }
+          >
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
         </View>

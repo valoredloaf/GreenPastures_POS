@@ -302,7 +302,17 @@ export default function AdminScreen({
 
       <View style={styles.header}>
         <Text style={styles.title}>Admin — {adminName}</Text>
-        <TouchableOpacity style={styles.backButton} onPress={onLogout}>
+              <TouchableOpacity
+          style={styles.backButton}
+          onPress={() =>
+            confirmDialog(
+              'Log Out',
+              'Are you sure you want to log out?',
+              'Log Out',
+              () => onLogout?.()
+            )
+          }
+        >
           <Text style={styles.backText}>Logout</Text>
         </TouchableOpacity>
       </View>

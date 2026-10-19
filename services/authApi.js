@@ -1,6 +1,7 @@
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut,
 } from 'firebase/auth';
 import {
@@ -46,9 +47,9 @@ export async function fetchAllProfiles() {
   }));
 }
 
-export async function createProfile(name, password) {
+export async function createProfile(name, password, realEmail) {          
   try {
-    const email = makeEmail(name);
+    const email = realEmail?.trim() || makeEmail(name);                  
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     await setDoc(doc(db, 'profiles', cred.user.uid), {
       name,
@@ -98,4 +99,22 @@ export async function verifyProfile(id) {
 export async function deleteProfile(id) {
   await deleteDoc(doc(db, 'profiles', id));
   return { success: true };
+}
+
+export async function forgotPassword(profileId) {
+  try {
+    const snap = await getDoc(doc(db, 'profiles', profileId));
+    if (!snap.exists()) return { success: false, error: 'Profile not found' };
+
+    const { email } = snap.data();
+    if (email.endsWith('@greenpastures.app')) {
+      return { success: false, error: 'This profile has no real email. Ask the owner for help.' };
+    }
+
+    await sendPasswordResetEmail(auth, email);
+    return { success: true };
+  } catch (e) {
+    console.log('forgotPassword error:', e.message);
+    return { success: false, error: 'Could not send the reset email' };
+  }
 }

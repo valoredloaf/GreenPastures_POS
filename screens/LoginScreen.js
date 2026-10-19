@@ -11,7 +11,7 @@ import {
   Platform,
   useWindowDimensions,
 } from 'react-native';
-import { fetchProfiles, login } from '../services/authApi';
+import { fetchProfiles, login, forgotPassword } from '../services/authApi';
 
 export default function LoginScreen({ onLoginSuccess, onGoToSignup }) {
   const { width } = useWindowDimensions();
@@ -21,6 +21,7 @@ export default function LoginScreen({ onLoginSuccess, onGoToSignup }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [info, setInfo] = useState('');
 
   const numColumns = width >= 900 ? 4 : width >= 600 ? 3 : 2;
 
@@ -50,6 +51,17 @@ export default function LoginScreen({ onLoginSuccess, onGoToSignup }) {
     }
     onLoginSuccess?.(result.profile);
   };
+
+  const handleForgotPassword = async () => {
+  setError('');
+  setInfo('');
+  const result = await forgotPassword(selected.id);
+  if (!result.success) {
+    setError(result.error);
+    return;
+  }
+  setInfo('Reset link sent! Check your email (and spam folder).');
+};
 
   if (loadingProfiles) {
     return (
@@ -83,6 +95,7 @@ export default function LoginScreen({ onLoginSuccess, onGoToSignup }) {
           />
 
           {!!error && <Text style={styles.errorText}>{error}</Text>}
+          {!!info && <Text style={styles.infoText}>{info}</Text>}
 
           <TouchableOpacity
             style={styles.button}
@@ -94,6 +107,10 @@ export default function LoginScreen({ onLoginSuccess, onGoToSignup }) {
             ) : (
               <Text style={styles.buttonText}>Log In</Text>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.forgotButton} onPress={handleForgotPassword}>
+            <Text style={styles.forgotText}>Forgot password?</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.backButton} onPress={() => setSelected(null)}>
@@ -199,6 +216,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
+  infoText: { color: '#16A34A', fontSize: 13, marginBottom: 12 },
+  forgotButton: { marginTop: 16 },
+  forgotText: { color: '#5d4738', fontSize: 13, fontWeight: '600' },  
   buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
   backButton: { marginTop: 20 },
   backText: { color: '#6B7280', fontSize: 13 },

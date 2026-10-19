@@ -14,6 +14,7 @@ import { createProfile } from '../services/authApi';
 
 export default function SignupScreen({ onBackToLogin }) {
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -22,23 +23,31 @@ export default function SignupScreen({ onBackToLogin }) {
 
   const handleSubmit = async () => {
     setError('');
-    if (!name.trim() || !password) {
+     if (!name.trim() || !email.trim() || !password) {
       setError('Please fill in all fields');
       return;
     }
-    if (password !== confirmPassword) {
+    if (!email.includes('@') || !email.includes('.')) {
+      setError('Please enter a real email address');
+      return;
+    }
+        if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
     }
 
     setSubmitting(true);
-    const result = await createProfile(name.trim(), password);
+    const result = await createProfile(name.trim(), password, email.trim());
     setSubmitting(false);
 
     if (result.success) {
       setSubmitted(true);
     } else {
-      setError('Something went wrong. Try again.');
+      setError(
+        result.error?.includes('email-already-in-use')
+          ? 'That email is already used by another profile'
+          : 'Something went wrong. Try again.'
+      );
     }
   };
 
@@ -81,6 +90,19 @@ export default function SignupScreen({ onBackToLogin }) {
             />
           </View>
 
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. maria@gmail.com"
+              placeholderTextColor="#9AA0A6"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+            />
+          </View>
+          
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Password</Text>
             <TextInput
