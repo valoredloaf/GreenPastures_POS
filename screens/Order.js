@@ -6,11 +6,10 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
-  
 } from 'react-native';
 
 import PaymentScreen from './PaymentScreen';
-import { doc, writeBatch, collection, getDoc, runTransaction } from 'firebase/firestore';
+import { doc, collection, getDoc, runTransaction } from 'firebase/firestore';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { confirmDialog } from '../services/dialog';
@@ -50,8 +49,10 @@ export default function OrderScreen({
       console.log('Order number error:', e.message);
     }
   };
-console.log('handleLogout was called');
-    const handleLogout = () => {
+
+  console.log('handleLogout was called');
+
+  const handleLogout = () => {
     const message = orders.length > 0
       ? 'You have an unfinished order. If you log out, it will be lost. Log out anyway?'
       : 'Are you sure you want to log out?';
@@ -93,33 +94,25 @@ console.log('handleLogout was called');
     );
   };
 
-  const deductIngredientsForOrder = (cartItems) => {
-    const updated = ingredients.map(ing => ({ ...ing }));
+  // How much of each ingredient the cart uses, keyed by ingredient document id.
+  // Example: { "3": 240, "7": 60 }
+  const ingredientNeeds = (cartItems) => {
+    const needs = {};
 
     cartItems.forEach(cartItem => {
       const product = products.find(p => p.id === cartItem.id);
       if (!product || !product.recipe) return;
 
       product.recipe.forEach(entry => {
-        const ingredient = updated.find(ing => ing.name === entry.ingredient);
-        if (ingredient) {
-          ingredient.quantity = Math.max(
-            0,
-            ingredient.quantity - entry.amount * cartItem.quantity
-          );
-        }
+        const ingredient = ingredients.find(ing => ing.name === entry.ingredient);
+        if (!ingredient) return;
+
+        const key = String(ingredient.id);
+        needs[key] = (needs[key] || 0) + entry.amount * cartItem.quantity;
       });
     });
 
-    setIngredients(updated);
-
-    const batch = writeBatch(db);
-    updated.forEach((ing, i) => {
-      if (ing.quantity !== ingredients[i].quantity) {
-        batch.update(doc(db, 'ingredients', String(ing.id)), { quantity: ing.quantity });
-      }
-    });
-    batch.commit().catch(e => console.log('Stock save error:', e.message));
+    return needs;
   };
 
   const lowStockItems = ingredients.filter(ing => ing.quantity <= ing.threshold);
@@ -148,6 +141,7 @@ console.log('handleLogout was called');
 
   console.log('Menu categories:', Object.keys(menuCategories));
   console.log('Product categories:', products.map(p => `${p.name} -> "${p.category}"`));
+
   // Reads the captured photo and turns it into a data URI, stored directly
   // in the sale document (no Firebase Storage — that path isn't reliable on RN).
   const uploadProof = async (uri) => {
@@ -196,39 +190,66 @@ console.log('handleLogout was called');
             proofUrl = await uploadProof(proofUri);
           }
 
-          let number = null;
-          try {
-            const counterRef = doc(db, 'counters', 'orders');
-            const todayString = getTodayString();
-            number = await runTransaction(db, async (tx) => {
-              const snap = await tx.get(counterRef);
-              const data = snap.exists() ? snap.data() : null;
-              const lastToday = data && data.date === todayString ? data.last : 0;
-              const next = lastToday + 1;
-              tx.set(counterRef, { last: next, date: todayString });
-              tx.set(doc(collection(db, 'sales')), {
-                orderNumber: next,
-                date: now.toISOString(),
-                cashier: cashierName || 'Unknown',
-                paymentMode,
-                amountPaid: amountPaid ?? totalPrice,
-                change: change ?? 0,
-                total: totalPrice,
-                items,
-                proofUrl,
-              });
-              return next;
-            });
-          } catch (e) {
-            console.log('Sale save error:', e.message);
-          }
+          const needs = ingredientNeeds(orders);
+          const stockIds = Object.keys(needs);
+          const counterRef = doc(db, 'counters', 'orders');
+          const todayString = getTodayString();
 
-          deductIngredientsForOrder(orders);
+          // ONE transaction: order number + sale + stock deduction.
+          // If anything fails, nothing is saved and the error reaches PaymentScreen,
+          // which shows "Payment not saved" and keeps the order so the cashier can retry.
+          const { number, newQuantities } = await runTransaction(db, async (tx) => {
+            // Firestore requires every read to happen before any write
+            const counterSnap = await tx.get(counterRef);
+            const stockSnaps = await Promise.all(
+              stockIds.map(id => tx.get(doc(db, 'ingredients', id)))
+            );
+
+            const data = counterSnap.exists() ? counterSnap.data() : null;
+            const lastToday = data && data.date === todayString ? data.last : 0;
+            const next = lastToday + 1;
+
+            // Uses the CURRENT stock in Firestore, not the copy on this phone
+            const updated = {};
+            stockSnaps.forEach((snap, i) => {
+              if (!snap.exists()) return;
+              const id = stockIds[i];
+              const current = Number(snap.data().quantity) || 0;
+              const remaining = Math.max(0, current - needs[id]);
+              tx.update(snap.ref, { quantity: remaining });
+              updated[id] = remaining;
+            });
+
+            tx.set(counterRef, { last: next, date: todayString });
+            tx.set(doc(collection(db, 'sales')), {
+              orderNumber: next,
+              date: now.toISOString(),
+              cashier: cashierName || 'Unknown',
+              paymentMode,
+              amountPaid: amountPaid ?? totalPrice,
+              change: change ?? 0,
+              total: totalPrice,
+              items,
+              proofUrl,
+            });
+
+            return { number: next, newQuantities: updated };
+          });
+
+          // Saved. Reflect the new stock on screen right away
+          // (the live listener in App.js will confirm it a moment later)
+          setIngredients(prev =>
+            prev.map(ing =>
+              newQuantities[String(ing.id)] != null
+                ? { ...ing, quantity: newQuantities[String(ing.id)] }
+                : ing
+            )
+          );
 
           setSalesHistory(prev => [
             ...prev,
             {
-              id: number ?? Date.now(),
+              id: number,
               orderNumber: number,
               date: now.toLocaleString('en-PH', {
                 month: 'short',

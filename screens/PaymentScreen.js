@@ -5,7 +5,6 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Modal,
   Platform,
@@ -13,6 +12,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { showAlert, confirmDialog } from '../services/dialog';
 
 const money = (n) => `₱${Number(n || 0).toFixed(2)}`;
 const cleanName = (name) => String(name || '').replace(/\n/g, ' ');
@@ -102,7 +102,7 @@ export default function PaymentScreen({
   // Receipt button: shows a preview of the current order
   const openPreview = () => {
     if (orders.length === 0) {
-      Alert.alert('Nothing to show', 'Add items to the order first.');
+      showAlert('Nothing to show', 'Add items to the order first.');
       return;
     }
     const paid = Number(amount);
@@ -140,7 +140,7 @@ export default function PaymentScreen({
       });
     } catch (e) {
       setSaving(false);
-      Alert.alert('Payment not saved', e?.message || 'Please try again.');
+      showAlert('Payment not saved', e?.message || 'Please try again.');
       return;
     }
 
@@ -161,7 +161,7 @@ export default function PaymentScreen({
   const captureGCashProof = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Camera needed', 'Camera access is required to capture G-Cash payment proof.');
+      showAlert('Camera needed', 'Camera access is required to capture G-Cash payment proof.');
       return null;
     }
 
@@ -176,18 +176,18 @@ export default function PaymentScreen({
 
   const enterPayment = async () => {
     if (orders.length === 0) {
-      Alert.alert('No items', 'Add items to the order first.');
+      showAlert('No items', 'Add items to the order first.');
       return;
     }
 
     const paid = Number(amount);
     if (!paid) {
-      Alert.alert('Payment Required', 'Please enter payment received.');
+      showAlert('Payment Required', 'Please enter payment received.');
       return;
     }
 
     if (paid < totalPrice) {
-      Alert.alert(
+      showAlert(
         'Insufficient Payment',
         `Total Price: ₱${totalPrice}\nPayment Received: ₱${paid}`
       );
@@ -200,7 +200,7 @@ export default function PaymentScreen({
       setCapturingProof(false);
 
       if (!proofUri) {
-        Alert.alert('Proof required', 'Please take a photo of the G-Cash payment confirmation to continue.');
+        showAlert('Proof required', 'Please take a photo of the G-Cash payment confirmation to continue.');
         return;
       }
 
@@ -211,20 +211,13 @@ export default function PaymentScreen({
     await finishPayment(paid, null);
   };
 
+  // confirmDialog uses the browser's confirm box on web, and a native alert on phones
   const handleVoid = () => {
-    Alert.alert(
+    confirmDialog(
       'Void Order',
       'Are you sure you want to void this order?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Void',
-          style: 'destructive',
-          onPress: () => {
-            if (onVoid) onVoid();
-          },
-        },
-      ]
+      'Void',
+      () => onVoid?.()
     );
   };
 
@@ -240,10 +233,10 @@ export default function PaymentScreen({
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share receipt' });
       } else {
-        Alert.alert('Receipt saved', uri);
+        showAlert('Receipt saved', uri);
       }
     } catch (e) {
-      Alert.alert('Could not create receipt', e?.message || 'Please try again.');
+      showAlert('Could not create receipt', e?.message || 'Please try again.');
     }
   };
 
@@ -251,7 +244,7 @@ export default function PaymentScreen({
     try {
       await Print.printAsync({ html: receiptHtml(receipt) });
     } catch (e) {
-      Alert.alert('Could not print', e?.message || 'Please try again.');
+      showAlert('Could not print', e?.message || 'Please try again.');
     }
   };
 
