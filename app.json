@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "CoffeeOrderingApp2",
+    "name": "Green Pastures POS",
     "slug": "CoffeeOrderingApp2",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,19 +10,25 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.valoredloaf.greenpasturespos",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      },
-      "usesCleartextTraffic": true
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow Green Pastures POS to use the camera to capture G-Cash payment proof."
+        }
+      ]
     ]
   }
 }

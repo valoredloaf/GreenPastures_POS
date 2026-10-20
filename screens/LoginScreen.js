@@ -9,9 +9,12 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Image,
   useWindowDimensions,
 } from 'react-native';
 import { fetchProfiles, login, forgotPassword } from '../services/authApi';
+
+const logo = require('../assets/logo/green-pastures-login.png');
 
 export default function LoginScreen({ onLoginSuccess, onGoToSignup }) {
   const { width } = useWindowDimensions();
@@ -37,6 +40,7 @@ export default function LoginScreen({ onLoginSuccess, onGoToSignup }) {
     setSelected(profile);
     setPassword('');
     setError('');
+    setInfo('');
   };
 
   const handleLogin = async () => {
@@ -53,15 +57,15 @@ export default function LoginScreen({ onLoginSuccess, onGoToSignup }) {
   };
 
   const handleForgotPassword = async () => {
-  setError('');
-  setInfo('');
-  const result = await forgotPassword(selected.id);
-  if (!result.success) {
-    setError(result.error);
-    return;
-  }
-  setInfo('Reset link sent! Check your email or spam folder');
-};
+    setError('');
+    setInfo('');
+    const result = await forgotPassword(selected.id);
+    if (!result.success) {
+      setError(result.error);
+      return;
+    }
+    setInfo('Reset link sent! Check your email or spam folder');
+  };
 
   if (loadingProfiles) {
     return (
@@ -123,6 +127,7 @@ export default function LoginScreen({ onLoginSuccess, onGoToSignup }) {
 
   return (
     <View style={styles.flex}>
+      <Image source={logo} style={styles.logo} resizeMode="contain" />
       <Text style={styles.headerTitle}>Who's logging in?</Text>
       <FlatList
         key={numColumns}
@@ -155,12 +160,18 @@ export default function LoginScreen({ onLoginSuccess, onGoToSignup }) {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: '#F5F6F8' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F6F8' },
+  logo: {
+    width: 110,
+    height: 110,
+    alignSelf: 'center',
+    marginTop: 36,
+  },
   headerTitle: {
     fontSize: 22,
     fontWeight: '700',
     color: '#111827',
     textAlign: 'center',
-    marginTop: 48,
+    marginTop: 12,
     marginBottom: 24,
   },
   grid: { paddingHorizontal: 16, alignItems: 'center' },
@@ -207,6 +218,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   errorText: { color: '#DC2626', fontSize: 13, marginBottom: 12 },
+  infoText: { color: '#16A34A', fontSize: 13, marginBottom: 12 },
   button: {
     width: '100%',
     maxWidth: 320,
@@ -216,10 +228,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  infoText: { color: '#16A34A', fontSize: 13, marginBottom: 12 },
-  forgotButton: { marginTop: 16 },
-  forgotText: { color: '#5d4738', fontSize: 13, fontWeight: '600' },  
   buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  forgotButton: { marginTop: 16 },
+  forgotText: { color: '#5d4738', fontSize: 13, fontWeight: '600' },
   backButton: { marginTop: 20 },
   backText: { color: '#6B7280', fontSize: 13 },
 });
