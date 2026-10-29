@@ -16,7 +16,10 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -29,6 +32,12 @@
           "cameraPermission": "Allow Green Pastures POS to use the camera to capture G-Cash payment proof."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c9317d77-1015-4757-9ae4-0cdde831db68"
+      }
+    },
+    "owner": "loafthegret"
   }
 }
