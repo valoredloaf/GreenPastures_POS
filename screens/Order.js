@@ -9,20 +9,23 @@ import {
 } from 'react-native';
 
 import PaymentScreen from './PaymentScreen';
-import { doc, collection, getDoc, runTransaction } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { confirmDialog } from '../services/dialog';
+import {
+  getTodayString,
+  useSyncStatus,
+  isOnline,
+  isNetworkError,
+  withTimeout,
+  newSaleIds,
+  saveSaleTransaction,
+  enqueueSale,
+  saveCatalogPart,
+} from '../services/offline';
 
 import { db } from '../services/firebase';
-
-const getTodayString = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 export default function OrderScreen({
   cashierName,
@@ -39,6 +42,9 @@ export default function OrderScreen({
   const [showPayment, setShowPayment] = useState(false);
   const [orderNumber, setOrderNumber] = useState(null);
 
+  // { online, pending, failed } - pending = sales saved on this phone, waiting to upload
+  const sync = useSyncStatus();
+
   const loadOrderNumber = async () => {
     try {
       const snap = await getDoc(doc(db, 'counters', 'orders'));
@@ -50,19 +56,14 @@ export default function OrderScreen({
     }
   };
 
-  console.log('handleLogout was called');
-
-  const handleLogout = () => {
-    const message = orders.length > 0
-      ? 'You have an unfinished order. If you log out, it will be lost. Log out anyway?'
-      : 'Are you sure you want to log out?';
-
-    confirmDialog('Log Out', message, 'Log Out', () => onLogout?.());
-  };
-
   useEffect(() => {
     loadOrderNumber();
   }, []);
+
+  // Refresh the preview number when the connection comes back or the queue empties
+  useEffect(() => {
+    if (sync.online && sync.pending === 0) loadOrderNumber();
+  }, [sync.online, sync.pending]);
 
   const categories = ['All', ...Object.keys(menuCategories)];
   const colorFor = (category) => menuCategories[category] || '#B99F96';
@@ -115,6 +116,17 @@ export default function OrderScreen({
     return needs;
   };
 
+  // Shows new stock numbers on screen and keeps them in the offline cache
+  const applyStock = (newQuantities) => {
+    const updated = ingredients.map(ing =>
+      newQuantities[String(ing.id)] != null
+        ? { ...ing, quantity: newQuantities[String(ing.id)] }
+        : ing
+    );
+    setIngredients(updated);
+    saveCatalogPart('ingredients', updated);
+  };
+
   const lowStockItems = ingredients.filter(ing => ing.quantity <= ing.threshold);
 
   const totalPrice = orders.reduce(
@@ -138,9 +150,6 @@ export default function OrderScreen({
     selectedCategory === 'All'
       ? sortedProducts
       : products.filter(product => normalize(product.category) === normalize(selectedCategory));
-
-  console.log('Menu categories:', Object.keys(menuCategories));
-  console.log('Product categories:', products.map(p => `${p.name} -> "${p.category}"`));
 
   // Reads the captured photo and turns it into a data URI, stored directly
   // in the sale document (no Firebase Storage — that path isn't reliable on RN).
@@ -170,7 +179,7 @@ export default function OrderScreen({
         orders={orders}
         totalPrice={totalPrice}
         cashierName={cashierName}
-        orderNumber={orderNumber}
+        orderNumber={sync.online ? orderNumber : 'OFFLINE'}
         onBack={() => setShowPayment(false)}
         onVoid={() => {
           setOrders([]);
@@ -190,66 +199,61 @@ export default function OrderScreen({
             proofUrl = await uploadProof(proofUri);
           }
 
+          const ids = await newSaleIds();
           const needs = ingredientNeeds(orders);
-          const stockIds = Object.keys(needs);
-          const counterRef = doc(db, 'counters', 'orders');
-          const todayString = getTodayString();
 
-          // ONE transaction: order number + sale + stock deduction.
-          // If anything fails, nothing is saved and the error reaches PaymentScreen,
-          // which shows "Payment not saved" and keeps the order so the cashier can retry.
-          const { number, newQuantities } = await runTransaction(db, async (tx) => {
-            // Firestore requires every read to happen before any write
-            const counterSnap = await tx.get(counterRef);
-            const stockSnaps = await Promise.all(
-              stockIds.map(id => tx.get(doc(db, 'ingredients', id)))
-            );
+          const sale = {
+            localId: ids.localId,
+            offlineRef: ids.offlineRef,
+            date: now.toISOString(),
+            cashier: cashierName || 'Unknown',
+            paymentMode,
+            amountPaid: amountPaid ?? totalPrice,
+            change: change ?? 0,
+            total: totalPrice,
+            items,
+            proofUrl,
+            needs,
+          };
 
-            const data = counterSnap.exists() ? counterSnap.data() : null;
-            const lastToday = data && data.date === todayString ? data.last : 0;
-            const next = lastToday + 1;
+          let number = null;
+          let offline = false;
 
-            // Uses the CURRENT stock in Firestore, not the copy on this phone
-            const updated = {};
-            stockSnaps.forEach((snap, i) => {
-              if (!snap.exists()) return;
-              const id = stockIds[i];
-              const current = Number(snap.data().quantity) || 0;
-              const remaining = Math.max(0, current - needs[id]);
-              tx.update(snap.ref, { quantity: remaining });
-              updated[id] = remaining;
+          // Try to save online first: ONE transaction for the order number, the sale and the stock.
+          // If the connection is down (or too slow), keep the sale on this phone instead.
+          // Any other error (for example the rules refusing it) still reaches PaymentScreen.
+          if (await isOnline()) {
+            try {
+              const result = await withTimeout(saveSaleTransaction(sale));
+              number = result.number;
+              applyStock(result.newQuantities);
+            } catch (e) {
+              if (!isNetworkError(e)) throw e;
+              offline = true;
+            }
+          } else {
+            offline = true;
+          }
+
+          if (offline) {
+            // Throws if the phone cannot store it, so a sale is never accepted and then lost
+            await enqueueSale(sale);
+            number = sale.offlineRef;
+
+            // Show the stock going down on this phone. The real numbers
+            // are applied in Firestore when the sale uploads.
+            const used = {};
+            Object.keys(needs).forEach(id => {
+              const ing = ingredients.find(i => String(i.id) === id);
+              if (ing) used[id] = Math.max(0, (Number(ing.quantity) || 0) - needs[id]);
             });
-
-            tx.set(counterRef, { last: next, date: todayString });
-            tx.set(doc(collection(db, 'sales')), {
-              orderNumber: next,
-              date: now.toISOString(),
-              cashier: cashierName || 'Unknown',
-              paymentMode,
-              amountPaid: amountPaid ?? totalPrice,
-              change: change ?? 0,
-              total: totalPrice,
-              items,
-              proofUrl,
-            });
-
-            return { number: next, newQuantities: updated };
-          });
-
-          // Saved. Reflect the new stock on screen right away
-          // (the live listener in App.js will confirm it a moment later)
-          setIngredients(prev =>
-            prev.map(ing =>
-              newQuantities[String(ing.id)] != null
-                ? { ...ing, quantity: newQuantities[String(ing.id)] }
-                : ing
-            )
-          );
+            applyStock(used);
+          }
 
           setSalesHistory(prev => [
             ...prev,
             {
-              id: number,
+              id: sale.localId,
               orderNumber: number,
               date: now.toLocaleString('en-PH', {
                 month: 'short',
@@ -266,7 +270,7 @@ export default function OrderScreen({
           ]);
 
           // The receipt screen takes over from here; onDone closes it
-          return { orderNumber: number, date: now };
+          return { orderNumber: number, date: now, offline };
         }}
         onDone={() => {
           setOrders([]);
@@ -288,8 +292,22 @@ export default function OrderScreen({
     </TouchableOpacity>
   );
 
+  const orderLabel = sync.online ? `#${orderNumber ?? '...'}` : 'OFFLINE';
+
   return (
     <View style={styles.container}>
+
+      {(!sync.online || sync.pending > 0 || sync.failed > 0) && (
+        <View style={[styles.syncBanner, sync.failed > 0 && styles.syncBannerError]}>
+          <Text style={styles.syncText}>
+            {sync.failed > 0
+              ? `⚠ ${sync.failed} sale(s) could not sync. Ask the admin to check.`
+              : !sync.online
+                ? `⚠ No connection. Sales are saved on this phone${sync.pending > 0 ? ` (${sync.pending} waiting to upload)` : ''}.`
+                : `↻ Uploading ${sync.pending} saved sale(s)...`}
+          </Text>
+        </View>
+      )}
 
       {lowStockItems.length > 0 && (
         <View style={styles.lowStockBanner}>
@@ -302,12 +320,16 @@ export default function OrderScreen({
       <View style={styles.orderContainer}>
 
         <View style={styles.orderHeader}>
-          <Text style={styles.orderTitle}>Order: #{orderNumber ?? '...'}</Text>
+          <Text style={styles.orderTitle}>Order: {orderLabel}</Text>
           <TouchableOpacity
             onPress={() =>
               confirmDialog(
                 'Log Out',
-                'Are you sure you want to log out?',
+                sync.pending > 0
+                  ? `${sync.pending} sale(s) have not been uploaded yet. They will upload after the next login with internet. Log out anyway?`
+                  : orders.length > 0
+                    ? 'You have an unfinished order. If you log out, it will be lost. Log out anyway?'
+                    : 'Are you sure you want to log out?',
                 'Log Out',
                 () => onLogout?.()
               )
@@ -402,6 +424,14 @@ export default function OrderScreen({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#555555', padding: 10 },
+  syncBanner: {
+    backgroundColor: '#FDE68A',
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 8,
+  },
+  syncBannerError: { backgroundColor: '#FECACA' },
+  syncText: { fontSize: 12, fontWeight: '700', color: '#78350F' },
   lowStockBanner: {
     backgroundColor: '#FEF3C7',
     borderRadius: 6,
