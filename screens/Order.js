@@ -301,7 +301,7 @@ export default function OrderScreen({
         <View style={[styles.syncBanner, sync.failed > 0 && styles.syncBannerError]}>
           <Text style={styles.syncText}>
             {sync.failed > 0
-              ? `⚠ ${sync.failed} sale(s) could not sync. Ask the admin to check.`
+              ? `⚠ ${sync.failed} sale(s) could not sync${sync.lastError ? `: ${sync.lastError}` : '.'}`
               : !sync.online
                 ? `⚠ No connection. Sales are saved on this phone${sync.pending > 0 ? ` (${sync.pending} waiting to upload)` : ''}.`
                 : `↻ Uploading ${sync.pending} saved sale(s)...`}

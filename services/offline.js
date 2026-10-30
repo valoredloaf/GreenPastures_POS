@@ -151,19 +151,23 @@ export function saveSaleTransaction(sale) {
   const today = getTodayString();
 
   return runTransaction(db, async (tx) => {
-    // Firestore requires every read to happen before any write
-    const saleSnap = await tx.get(saleRef);
-    if (saleSnap.exists()) {
+    // Firestore requires every read to happen before any write.
+    // Cashiers are not allowed to READ the sales collection (rules), so the duplicate check
+    // uses the counter document instead: it remembers the last 100 sale ids and their numbers.
+    const counterSnap = await tx.get(counterRef);
+    const data = counterSnap.exists() ? counterSnap.data() : null;
+    const recent = data && Array.isArray(data.recent) ? data.recent : [];
+
+    const seen = recent.find((r) => r.startsWith(`${sale.localId}|`));
+    if (seen) {
       // Already saved by an earlier try
-      return { number: saleSnap.data().orderNumber, newQuantities: {}, duplicate: true };
+      return { number: Number(seen.split('|')[1]), newQuantities: {}, duplicate: true };
     }
 
-    const counterSnap = await tx.get(counterRef);
     const stockSnaps = await Promise.all(
       stockIds.map((id) => tx.get(doc(db, 'ingredients', id)))
     );
 
-    const data = counterSnap.exists() ? counterSnap.data() : null;
     const lastToday = data && data.date === today ? data.last : 0;
     const next = lastToday + 1;
 
@@ -178,7 +182,11 @@ export function saveSaleTransaction(sale) {
       newQuantities[id] = remaining;
     });
 
-    tx.set(counterRef, { last: next, date: today });
+    tx.set(counterRef, {
+      last: next,
+      date: today,
+      recent: [...recent, `${sale.localId}|${next}`].slice(-100),
+    });
     tx.set(saleRef, {
       orderNumber: next,
       offlineRef: sale.offlineRef || null,
@@ -215,9 +223,11 @@ const getFailed = async () => {
 };
 
 async function notify() {
+  const failed = await getFailed();
   const counts = {
     pending: (await getQueue()).length,
-    failed: (await getFailed()).length,
+    failed: failed.length,
+    lastError: failed.length ? String(failed[failed.length - 1].error || '') : '',
   };
   listeners.forEach((fn) => fn(counts));
 }
@@ -278,9 +288,20 @@ export async function flushOutbox() {
   }
 }
 
+// Puts sales that failed earlier back in the queue to try again (for example after a fix)
+async function requeueFailed() {
+  const failed = await getFailed();
+  if (failed.length === 0) return;
+  const q = await getQueue();
+  failed.splice(0).forEach(({ error, ...sale }) => q.push(sale));
+  await writeJson(KEYS.failed, failed);
+  await writeJson(KEYS.queue, q);
+  notify();
+}
+
 // Start watching the connection. Call once after login, and call the returned function to stop.
 export function startSync() {
-  flushOutbox();
+  requeueFailed().catch(() => {}).then(() => flushOutbox());
 
   const stopNet = NetInfo.addEventListener((state) => {
     if (reachable(state)) flushOutbox();
@@ -296,7 +317,7 @@ export function startSync() {
 // For screens: { online, pending, failed }
 export function useSyncStatus() {
   const [online, setOnline] = useState(true);
-  const [counts, setCounts] = useState({ pending: 0, failed: 0 });
+  const [counts, setCounts] = useState({ pending: 0, failed: 0, lastError: '' });
 
   useEffect(() => {
     NetInfo.fetch().then((state) => setOnline(reachable(state))).catch(() => {});
@@ -309,5 +330,5 @@ export function useSyncStatus() {
     };
   }, []);
 
-  return { online, pending: counts.pending, failed: counts.failed };
+  return { online, pending: counts.pending, failed: counts.failed, lastError: counts.lastError };
 }
