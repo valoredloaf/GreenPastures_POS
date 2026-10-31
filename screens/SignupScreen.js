@@ -23,7 +23,7 @@ export default function SignupScreen({ onBackToLogin }) {
 
   const handleSubmit = async () => {
     setError('');
-     if (!name.trim() || !email.trim() || !password) {
+    if (!name.trim() || !email.trim() || !password) {
       setError('Please fill in all fields');
       return;
     }
@@ -31,7 +31,7 @@ export default function SignupScreen({ onBackToLogin }) {
       setError('Please enter a real email address');
       return;
     }
-        if (password !== confirmPassword) {
+    if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
     }
@@ -102,7 +102,7 @@ export default function SignupScreen({ onBackToLogin }) {
               onChangeText={setEmail}
             />
           </View>
-          
+
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Password</Text>
             <TextInput
@@ -174,6 +174,7 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     paddingHorizontal: 14,
     fontSize: 15,
+    color: '#111827',
     backgroundColor: '#FAFAFA',
   },
   errorText: { color: '#DC2626', fontSize: 13, marginBottom: 12, textAlign: 'center' },
