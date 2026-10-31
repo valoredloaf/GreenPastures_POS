@@ -11,12 +11,10 @@
     },
     "android": {
       "package": "com.valoredloaf.greenpasturespos",
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      },
+    "adaptiveIcon": {
+      "backgroundColor": "#FFFFFF",
+      "foregroundImage": "./assets/android-icon-foreground.png"
+    },
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
